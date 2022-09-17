@@ -3,7 +3,7 @@
 
 // -----------------------------------------------
 // Name: KINN Stake Contract
-// Version: 1.2.3 - add bid fee and unlock api
+// Version: 0.1.1 - rename symbol
 // Requires Reach v0.1.11-rc7 (27cb9643) or later
 // -----------------------------------------------
 
@@ -53,7 +53,7 @@ export const rUnstake = (ctc) => {
 
 // INTERACTS
 
-const auctioneerInteract = {
+const managerInteract = {
   getParams: Fun([], Params),
   signal: Fun([], Null),
 };
@@ -65,7 +65,7 @@ const relayInteract = {};
 export const Event = () => [];
 
 export const Participants = () => [
-  Participant("Manager", auctioneerInteract),
+  Participant("Manager", managerInteract),
   Participant("Relay", relayInteract),
 ];
 
