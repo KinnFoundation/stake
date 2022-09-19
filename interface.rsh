@@ -11,7 +11,7 @@
 
 const SERIAL_VER = 0;
 
-const FEE_MIN_RELAY = 5_000;
+const FEE_MIN_RELAY = 5_000; // TODO this may be too low
 
 // TYPES
 
