@@ -3,7 +3,7 @@
 
 // -----------------------------------------------
 // Name: KINN Stake Contract
-// Version: 0.1.2 - add withdraw
+// Version: 0.1.3 - protect constuctor from rt
 // Requires Reach v0.1.11-rc7 (27cb9643) or later
 // -----------------------------------------------
 
@@ -264,7 +264,9 @@ export const App = (map) => {
     .timeout(false);
   commit();
   Relay.publish();
+  const rt = getUntrackedFunds(token);
   transfer(relayFee).to(Relay);
+  transfer(rt, token).to(addr);
   commit();
   exit();
 };
