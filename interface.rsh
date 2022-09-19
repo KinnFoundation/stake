@@ -3,7 +3,7 @@
 
 // -----------------------------------------------
 // Name: KINN Stake Contract
-// Version: 0.1.3 - protect constuctor from rt
+// Version: 0.1.4 - protect relay from rt
 // Requires Reach v0.1.11-rc7 (27cb9643) or later
 // -----------------------------------------------
 
@@ -11,7 +11,7 @@
 
 const SERIAL_VER = 0;
 
-const FEE_MIN_RELAY = 5_000; // TODO this may be too low
+const FEE_MIN_RELAY = 6_000; 
 
 // TYPES
 
@@ -163,7 +163,7 @@ export const App = (map) => {
     //  allows manager to withdraw tokens
     .api_(a.withdraw, (msg) => {
       check(this == s.manager, "only manager can deposit");
-      check(!s.staked, "cannot deposit while staked"); 
+      check(!s.staked, "cannot deposit while staked");
       check(msg <= s.tokenAmount, "cannot withdraw more than balance");
       return [
         (k) => {
@@ -175,7 +175,7 @@ export const App = (map) => {
               tokenAmount: s.tokenAmount - msg,
             },
           ];
-        }
+        },
       ];
     })
     // api: grant
@@ -265,8 +265,7 @@ export const App = (map) => {
   commit();
   Relay.publish();
   const rt = getUntrackedFunds(token);
-  transfer(relayFee).to(Relay);
-  transfer(rt, token).to(addr);
+  transfer([relayFee, [rt, token]]).to(Relay);
   commit();
   exit();
 };
