@@ -3,13 +3,13 @@
 
 // -----------------------------------------------
 // Name: KINN Stake Contract
-// Version: 0.1.1 - rename symbol
+// Version: 0.1.2 - add withdraw
 // Requires Reach v0.1.11-rc7 (27cb9643) or later
 // -----------------------------------------------
 
 // CONSTS
 
-const SERIAL_VER = 0; 
+const SERIAL_VER = 0;
 
 const FEE_MIN_RELAY = 5_000;
 
@@ -78,10 +78,11 @@ export const Views = () => [
 export const Api = () => [
   API({
     deposit: Fun([UInt], Null),
+    withdraw: Fun([UInt], Null),
     grant: Fun([Contract], Null),
     close: Fun([], Null),
     stake,
-    unstake
+    unstake,
   }),
 ];
 
@@ -156,6 +157,25 @@ export const App = (map) => {
             },
           ];
         },
+      ];
+    })
+    // api: withdraw
+    //  allows manager to withdraw tokens
+    .api_(a.withdraw, (msg) => {
+      check(this == s.manager, "only manager can deposit");
+      check(!s.staked, "cannot deposit while staked"); 
+      check(msg <= s.tokenAmount, "cannot withdraw more than balance");
+      return [
+        (k) => {
+          k(null);
+          transfer(msg, token).to(this);
+          return [
+            {
+              ...s,
+              tokenAmount: s.tokenAmount - msg,
+            },
+          ];
+        }
       ];
     })
     // api: grant
