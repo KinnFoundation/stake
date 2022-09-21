@@ -3,7 +3,7 @@
 
 // -----------------------------------------------
 // Name: KINN Stake Contract
-// Version: 0.1.4 - protect relay from rt
+// Version: 0.1.5 - remove relay fee param
 // Requires Reach v0.1.11-rc7 (27cb9643) or later
 // -----------------------------------------------
 
@@ -17,8 +17,7 @@ const FEE_MIN_RELAY = 6_000;
 
 const Params = Object({
   tokenAmount: UInt, // NFT token amount
-  remoteCtc: Contract, // remote contract
-  relayFee: UInt, // relay fee
+  remoteCtc: Contract // remote contract
 });
 
 const State = Struct([
@@ -91,17 +90,14 @@ export const App = (map) => {
     map;
 
   Manager.only(() => {
-    const { tokenAmount, remoteCtc, relayFee } = declassify(
+    const { tokenAmount, remoteCtc } = declassify(
       interact.getParams()
     );
   });
 
   // Step
-  Manager.publish(tokenAmount, remoteCtc, relayFee)
-    .check(() => {
-      check(relayFee >= FEE_MIN_RELAY, "relay fee too low");
-    })
-    .pay([amt + SERIAL_VER + relayFee, [tokenAmount, token]])
+  Manager.publish(tokenAmount, remoteCtc)
+    .pay([amt + SERIAL_VER + FEE_MIN_RELAY, [tokenAmount, token]])
     .timeout(relativeTime(ttl), () => {
       // Step
       Anybody.publish();
@@ -129,7 +125,7 @@ export const App = (map) => {
       v.state.set(State.fromObject(s));
     })
     // BALANCE
-    .invariant(balance() == relayFee, "balance accurate")
+    .invariant(balance() == FEE_MIN_RELAY, "balance accurate")
     // TOKEN BALANCE
     .invariant(
       implies(!s.closed, balance(token) == s.tokenAmount),
@@ -265,7 +261,7 @@ export const App = (map) => {
   commit();
   Relay.publish();
   const rt = getUntrackedFunds(token);
-  transfer([relayFee, [rt, token]]).to(Relay);
+  transfer([FEE_MIN_RELAY, [rt, token]]).to(Relay);
   commit();
   exit();
 };
