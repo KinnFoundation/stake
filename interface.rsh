@@ -3,50 +3,84 @@
 
 // -----------------------------------------------
 // Name: KINN Stake Contract
-// Version: 0.1.5 - remove relay fee param
+// Version: 0.1.6 - use base, add delegate
 // Requires Reach v0.1.11-rc7 (27cb9643) or later
 // -----------------------------------------------
+
+import {
+  State as BaseState,
+  Params as BaseParams,
+  view,
+  baseState,
+  baseEvents
+} from "@KinnFoundation/base#base-v0.1.11r4:interface.rsh";
 
 // CONSTS
 
 const SERIAL_VER = 0;
 
-const FEE_MIN_RELAY = 6_000; 
+// FUNCS
+
+const stakeState = (delegateAddr, token, tokenAmount, remoteCtc, staked = false, time = 0, secs = 0) => ({
+  token,
+  tokenAmount,
+  remoteCtc,
+  delegateAddr,
+  staked,
+  time,
+  secs
+});
 
 // TYPES
 
-const Params = Object({
+export const StakeParams = Object({
   tokenAmount: UInt, // NFT token amount
-  remoteCtc: Contract // remote contract
+  remoteCtc: Contract, // remote contract
 });
 
-const State = Struct([
-  ["manager", Address], // manager address
+const Params = Object({
+  ...Object.fields(BaseParams),
+  ...Object.fields(StakeParams),
+});
+
+export const StakeState = Struct([
   ["token", Token], // NFT token
   ["tokenAmount", UInt], // NFT token amount
   ["remoteCtc", Contract], // remote contract
   ["staked", Bool], // staked
-  ["closed", Bool], // closed
   ["time", UInt], // network time
   ["secs", UInt], // network seconds
+  ["delegateAddr", Address], // delegate address
+]);
+
+const State = Struct([
+  ...Struct.fields(BaseState),
+  ...Struct.fields(StakeState),
 ]);
 
 // FUN
 
-const state = Fun([], State);
-const stake = Fun([Token, UInt], Null);
-const unstake = Fun([], Null);
+const fState = Fun([], State);
+const fStake = Fun([Token, UInt], Null);
+const fUnstake = Fun([], Null);
+const fDeposit = Fun([UInt], Null);
+const fWithdraw = Fun([UInt], Null);
+const fGrant = Fun([Contract], Null);
+const fClose = Fun([], Null);
+const fDepositGrant = Fun([UInt, Contract], Null);
+const fWithdrawGrant = Fun([UInt, Contract], Null);
+const fUpdateDelegate = Fun([Address], Null);
 
 // REMOTE FUN
 
 export const rStake = (ctc, token, tokenAmount) => {
-  const r = remote(ctc, { state, stake });
+  const r = remote(ctc, { state: fState, stake: fStake });
   r.stake(token, tokenAmount);
   return r.state();
 };
 
 export const rUnstake = (ctc) => {
-  const r = remote(ctc, { unstake });
+  const r = remote(ctc, { unstake: fUnstake });
   r.unstake();
 };
 
@@ -54,50 +88,52 @@ export const rUnstake = (ctc) => {
 
 const managerInteract = {
   getParams: Fun([], Params),
-  signal: Fun([], Null),
 };
 
 const relayInteract = {};
 
 // CONTRACT
 
-export const Event = () => [];
+export const Event = () => [Events({ ...baseEvents })];
 
 export const Participants = () => [
   Participant("Manager", managerInteract),
   Participant("Relay", relayInteract),
 ];
 
-export const Views = () => [
-  View({
-    state: State,
-  }),
-];
+export const Views = () => [View(view(State))];
 
 export const Api = () => [
   API({
-    deposit: Fun([UInt], Null),
-    withdraw: Fun([UInt], Null),
-    grant: Fun([Contract], Null),
-    close: Fun([], Null),
-    stake,
-    unstake,
+    deposit: fDeposit,
+    withdraw: fWithdraw,
+    grant: fGrant,
+    close: fClose,
+    stake: fStake,
+    unstake: fUnstake,
+    depositGrant: fDepositGrant,
+    withdrawGrant: fWithdrawGrant,
+    updateDelegate: fUpdateDelegate,
   }),
 ];
 
 export const App = (map) => {
-  const [{ amt, ttl, tok0: token }, [addr, _], [Manager, Relay], [v], [a], _] =
-    map;
+  const [
+    { amt, ttl, tok0: token },
+    [addr, _],
+    [Manager, Relay],
+    [v],
+    [a],
+    [e],
+  ] = map;
 
   Manager.only(() => {
-    const { tokenAmount, remoteCtc } = declassify(
-      interact.getParams()
-    );
+    const { tokenAmount, remoteCtc } = declassify(interact.getParams());
   });
 
   // Step
   Manager.publish(tokenAmount, remoteCtc)
-    .pay([amt + SERIAL_VER + FEE_MIN_RELAY, [tokenAmount, token]])
+    .pay([amt + SERIAL_VER, [tokenAmount, token]])
     .timeout(relativeTime(ttl), () => {
       // Step
       Anybody.publish();
@@ -106,17 +142,11 @@ export const App = (map) => {
     });
   transfer([amt + SERIAL_VER]).to(addr);
 
-  Manager.interact.signal();
+  e.appLaunch();
 
   const initialState = {
-    manager: Manager,
-    staked: false,
-    closed: false,
-    token,
-    tokenAmount,
-    remoteCtc,
-    time: 0,
-    secs: 0,
+    ...baseState(Manager),
+    ...stakeState(Manager, token, tokenAmount, remoteCtc),
   };
 
   // Step
@@ -125,7 +155,7 @@ export const App = (map) => {
       v.state.set(State.fromObject(s));
     })
     // BALANCE
-    .invariant(balance() == FEE_MIN_RELAY, "balance accurate")
+    .invariant(balance() == 0, "balance accurate")
     // TOKEN BALANCE
     .invariant(
       implies(!s.closed, balance(token) == s.tokenAmount),
@@ -158,8 +188,8 @@ export const App = (map) => {
     // api: withdraw
     //  allows manager to withdraw tokens
     .api_(a.withdraw, (msg) => {
-      check(this == s.manager, "only manager can deposit");
-      check(!s.staked, "cannot deposit while staked");
+      check(this == s.manager, "only manager can withdraw");
+      check(!s.staked, "cannot withdraw while staked");
       check(msg <= s.tokenAmount, "cannot withdraw more than balance");
       return [
         (k) => {
@@ -177,7 +207,10 @@ export const App = (map) => {
     // api: grant
     //  allows manager to grant access to remote contract
     .api_(a.grant, (ctc) => {
-      check(this == s.manager, "only manager can close");
+      check(
+        this == s.manager || this == s.delegateAddr,
+        "only manager or delegate can grant"
+      );
       check(!s.staked, "cannot grant while staked");
       return [
         (k) => {
@@ -186,6 +219,61 @@ export const App = (map) => {
             {
               ...s,
               remoteCtc: ctc,
+            },
+          ];
+        },
+      ];
+    })
+    // api: deposit grant
+    //  allows manager to deposit more tokens and grant at the same time
+    .api_(a.depositGrant, (msg, ctc) => {
+      check(this == s.manager, "only manager can depositGrant");
+      check(!s.staked, "cannot depositGrant while staked");
+      return [
+        [0, [msg, token]],
+        (k) => {
+          k(null);
+          return [
+            {
+              ...s,
+              tokenAmount: s.tokenAmount + msg,
+              remoteCtc: ctc,
+            },
+          ];
+        },
+      ];
+    })
+    // api: withdraw grant
+    //  allows manager to withdraw tokens and grant at the same time
+    .api_(a.withdrawGrant, (msg, ctc) => {
+      check(this == s.manager, "only manager can widrawGrant");
+      check(!s.staked, "cannot withdrawGrant while staked");
+      check(msg <= s.tokenAmount, "cannot withdraw more than balance");
+      return [
+        (k) => {
+          k(null);
+          transfer(msg, token).to(this);
+          return [
+            {
+              ...s,
+              tokenAmount: s.tokenAmount - msg,
+              remoteCtc: ctc,
+            },
+          ];
+        },
+      ];
+    })
+    // api: update delegate
+    //  allows manager to update delegate
+    .api_(a.updateDelegate, (msg) => {
+      check(this == s.manager, "only manager can update delegate");
+      return [
+        (k) => {
+          k(null);
+          return [
+            {
+              ...s,
+              delegateAddr: msg,
             },
           ];
         },
@@ -258,10 +346,9 @@ export const App = (map) => {
       ];
     })
     .timeout(false);
+  e.appClose();
   commit();
   Relay.publish();
-  const rt = getUntrackedFunds(token);
-  transfer([FEE_MIN_RELAY, [rt, token]]).to(Relay);
   commit();
   exit();
 };
